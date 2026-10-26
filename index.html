@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>無廣告個人小說書庫</title>
+    <title>無廣告個人小說書庫 (多檔案獨立架構)</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -20,18 +20,18 @@
                 <span class="text-2xl">📚</span>
                 <div>
                     <h1 class="text-xl font-bold tracking-wider">無廣告小說書庫</h1>
-                    <p class="text-[10px] text-indigo-400 font-mono" id="syncStatus">狀態：準備就緒</p>
+                    <p class="text-[10px] text-indigo-400 font-mono" id="syncStatus">狀態：多檔案架構準備就緒</p>
                 </div>
             </div>
             <!-- 功能按鈕與搜尋 -->
             <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
                 <input type="text" id="searchInput" placeholder="搜尋書名或標籤..." class="bg-slate-700 text-slate-100 px-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-48">
                 
-                <button onclick="loadFromGitHub()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow" title="從 GitHub 同步雲端">
-                    🔄 同步
+                <button onclick="loadLibraryIndex()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow" title="從 GitHub 重新同步索引">
+                    🔄 同步索引
                 </button>
-                <button onclick="exportProject()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow" title="下載 JSON 備份">
-                    📥 下載
+                <button onclick="exportAll()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow" title="下載索引與變更檔案">
+                    📥 下載備份
                 </button>
                 <button onclick="logout()" class="bg-rose-900/50 hover:bg-rose-900 text-rose-200 px-3 py-2 rounded-lg text-sm transition shadow" title="登出鎖定">
                     🔒 登出
@@ -81,7 +81,7 @@
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" onclick="closeBookModal()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-4 py-2 rounded-lg text-sm transition">取消</button>
-                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition">儲存並產生 JSON</button>
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition">儲存並產生檔案</button>
                 </div>
             </form>
         </div>
@@ -117,16 +117,17 @@
     <!-- JavaScript 核心邏輯 -->
     <script>
         const MY_PASSWORD = "1234"; // 預設解鎖密碼
-        const JSON_URL = './library.json';
+        const INDEX_URL = './index.json';
 
-        let library = [];
+        let bookIndex = []; // 存放所有小說的索引清單
+        let currentBookData = null; // 當前正在檢閱/閱讀的單書詳細資料 (包含 chapters)
         let currentView = 'home';
         let activeBookId = null;
         let activeChapterId = null;
         let currentCategory = '全部';
         let fontSize = 18;
         let readerTheme = localStorage.getItem('reader_theme') || 'dark'; // 'dark' 或 'light'
-        let chapterSortOrder = 'asc'; // 'asc' 正序 (順序) | 'desc' 倒序
+        let chapterSortOrder = 'asc'; // 'asc' 正序 | 'desc' 倒序
 
         let readingHistory = JSON.parse(localStorage.getItem('novel_history')) || {};
         const categories = ['全部', '輕小說 / 異世界', '玄幻修真', '都市科幻', '歷史軍事', '懸疑驚悚', '言情', '其他 / 收藏'];
@@ -183,65 +184,134 @@
                 return;
             }
             
-            const localData = localStorage.getItem('my_novels_github');
-            if (localData) {
-                try { library = JSON.parse(localData); } catch(e) {}
+            const localIndex = localStorage.getItem('my_novels_index');
+            if (localIndex) {
+                try { bookIndex = JSON.parse(localIndex); } catch(e) {}
             }
             
-            if (!library || library.length === 0) {
-                library = [
+            if (!bookIndex || bookIndex.length === 0) {
+                bookIndex = [
                     {
                         id: 1,
                         title: '範例小說',
                         url: '',
                         category: '輕小說 / 異世界',
                         desc: '示範書籍',
-                        chapters: [{ id: 101, title: '第一章', content: '內容範例' }]
+                        path: 'books/book_1.json',
+                        chapterCount: 1
                     }
                 ];
+                // 順便建立範例單書快取
+                localStorage.setItem('book_cache_1', JSON.stringify({
+                    id: 1,
+                    title: '範例小說',
+                    url: '',
+                    category: '輕小說 / 異世界',
+                    desc: '示範書籍',
+                    chapters: [{ id: 101, title: '第一章', content: '內容範例' }]
+                }));
             }
             
             render();
-            loadFromGitHub();
+            loadLibraryIndex();
         }
 
-        async function loadFromGitHub() {
+        // 載入總索引檔 index.json
+        async function loadLibraryIndex() {
             const statusEl = document.getElementById('syncStatus');
             try {
-                const response = await fetch(JSON_URL + '?t=' + Date.now());
+                const response = await fetch(INDEX_URL + '?t=' + Date.now());
                 if (response.ok) {
-                    const remoteData = await response.json();
-                    if (Array.isArray(remoteData) && remoteData.length > 0) {
-                        library = remoteData;
-                        localStorage.setItem('my_novels_github', JSON.stringify(library));
-                        if(statusEl) statusEl.textContent = '狀態：已同步雲端';
+                    const remoteIndex = await response.json();
+                    if (Array.isArray(remoteIndex) && remoteIndex.length > 0) {
+                        bookIndex = remoteIndex;
+                        localStorage.setItem('my_novels_index', JSON.stringify(bookIndex));
+                        if(statusEl) statusEl.textContent = '狀態：索引已同步雲端';
                         render();
                     }
                 }
             } catch (err) {
-                if(statusEl) statusEl.textContent = '狀態：使用本機快取';
+                if(statusEl) statusEl.textContent = '狀態：使用本機索引快取';
             }
         }
 
-        function saveData() {
-            localStorage.setItem('my_novels_github', JSON.stringify(library));
+        // 非同步載入指定的單書 JSON 檔案
+        async function loadBookData(bookId, callback) {
+            const indexItem = bookIndex.find(b => b.id === bookId);
+            if (!indexItem) return;
+
+            // 先檢查本機快取
+            const cachedBook = localStorage.getItem(`book_cache_${bookId}`);
+            if (cachedBook) {
+                try {
+                    currentBookData = JSON.parse(cachedBook);
+                    if (callback) callback();
+                } catch(e) {}
+            }
+
+            // 從雲端載入最新單書檔案
+            try {
+                const res = await fetch(`./${indexItem.path}?t=` + Date.now());
+                if (res.ok) {
+                    const data = await res.json();
+                    currentBookData = data;
+                    localStorage.setItem(`book_cache_${bookId}`, JSON.stringify(data));
+                    if (callback) callback();
+                }
+            } catch(err) {
+                console.error("無法載入單書檔案", err);
+                if (!currentBookData) {
+                    alert('無法載入該小說的章節內容檔案，請確認該 JSON 檔已上傳至對應目錄！');
+                    goHome();
+                }
+            }
         }
 
-        function exportProject() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(library, null, 2));
+        function saveIndexData() {
+            localStorage.setItem('my_novels_index', JSON.stringify(bookIndex));
+        }
+
+        function saveCurrentBookData() {
+            if (!currentBookData) return;
+            localStorage.setItem(`book_cache_${currentBookData.id}`, JSON.stringify(currentBookData));
+            
+            // 同步更新索引中的章節數量與描述
+            const idx = bookIndex.findIndex(b => b.id === currentBookData.id);
+            if (idx !== -1) {
+                bookIndex[idx].title = currentBookData.title;
+                bookIndex[idx].category = currentBookData.category;
+                bookIndex[idx].desc = currentBookData.desc;
+                bookIndex[idx].url = currentBookData.url;
+                bookIndex[idx].chapterCount = currentBookData.chapters ? currentBookData.chapters.length : 0;
+            }
+            saveIndexData();
+
+            // 自動下載該書的 JSON 檔以及 index.json 供您更新到 GitHub
+            downloadJsonFile(currentBookData, `book_${currentBookData.id}.json`);
+            downloadJsonFile(bookIndex, 'index.json');
+            alert(`已自動產生並下載「${currentBookData.title}.json」以及更新後的「index.json」！請將它們上傳至 GitHub 倉庫對應位置。`);
+        }
+
+        function downloadJsonFile(dataObj, fileName) {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataObj, null, 2));
             const downloadAnchor = document.createElement('a');
             downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", "library.json");
+            downloadAnchor.setAttribute("download", fileName);
             document.body.appendChild(downloadAnchor);
             downloadAnchor.click();
             downloadAnchor.remove();
-            alert('已下載最新的 library.json 檔案！請將它上傳或覆蓋到你的 GitHub 倉庫根目錄中。');
+        }
+
+        function exportAll() {
+            downloadJsonFile(bookIndex, 'index.json');
+            alert('已下載 index.json 總索引檔！若修改了特定書籍，請在該書目錄中下載對應的單書檔案。');
         }
 
         function goHome() {
             currentView = 'home';
             activeBookId = null;
             activeChapterId = null;
+            currentBookData = null;
             render();
         }
 
@@ -253,9 +323,9 @@
 
             const header = document.getElementById('appHeader');
             if (currentView === 'reader') {
-                header.classList.add('hidden'); // 進入閱讀介面時隱藏上方導覽列
+                header.classList.add('hidden');
             } else {
-                header.classList.remove('hidden'); // 其他頁面正常顯示
+                header.classList.remove('hidden');
             }
 
             const container = document.getElementById('viewArea');
@@ -283,7 +353,7 @@
             `;
 
             const grid = document.getElementById('bookGrid');
-            const filtered = library.filter(book => {
+            const filtered = bookIndex.filter(book => {
                 const matchCat = (currentCategory === '全部' || book.category === currentCategory);
                 const matchSearch = book.title.toLowerCase().includes(searchKeyword) || (book.desc && book.desc.toLowerCase().includes(searchKeyword));
                 return matchCat && matchSearch;
@@ -295,9 +365,7 @@
             }
 
             filtered.forEach(book => {
-                const chapterCount = book.chapters ? book.chapters.length : 0;
                 const history = readingHistory[book.id];
-
                 const card = document.createElement('div');
                 card.className = "bg-slate-800 border border-slate-700 rounded-xl p-5 flex flex-col justify-between hover:border-indigo-500 transition group shadow-md";
                 card.innerHTML = `
@@ -314,7 +382,7 @@
                         
                         <div class="text-xs text-slate-300 mb-4 bg-slate-900/60 px-3 py-2 rounded border border-slate-700/60 flex flex-col gap-1">
                             <div class="flex justify-between items-center text-slate-400">
-                                <span>離線章節：<strong class="text-indigo-400">${chapterCount}</strong> 篇</span>
+                                <span>離線章節：<strong class="text-indigo-400">${book.chapterCount || 0}</strong> 篇</span>
                             </div>
                             <div class="pt-1 border-t border-slate-800 flex items-center justify-between">
                                 <span class="text-[11px] text-slate-400">上次觀看：</span>
@@ -337,8 +405,9 @@
             });
         }
 
+        // 章節列表頁面
         function renderChapters(container) {
-            const book = library.find(b => b.id === activeBookId);
+            const book = currentBookData;
             if (!book) { goHome(); return; }
 
             container.innerHTML = `
@@ -402,9 +471,10 @@
             renderChapters(document.getElementById('viewArea'));
         }
 
+        // 閱讀器
         function renderReader(container) {
-            const book = library.find(b => b.id === activeBookId);
-            const chapter = book.chapters.find(c => c.id === activeChapterId);
+            const book = currentBookData;
+            const chapter = book ? book.chapters.find(c => c.id === activeChapterId) : null;
             if (!book || !chapter) { goHome(); return; }
 
             const chapters = book.chapters;
@@ -477,22 +547,27 @@
             document.getElementById('bookModal').classList.remove('hidden');
             document.getElementById('bookModal').classList.add('flex');
         }
+
         function openEditBookModal(id) {
-            const book = library.find(b => b.id === id);
-            if (!book) return;
-            document.getElementById('modalTitle').textContent = '編輯小說';
-            document.getElementById('bookId').value = book.id;
-            document.getElementById('bookTitleInput').value = book.title;
-            document.getElementById('bookUrlInput').value = book.url || '';
-            document.getElementById('bookCategoryInput').value = book.category;
-            document.getElementById('bookDescInput').value = book.desc || '';
-            document.getElementById('bookModal').classList.remove('hidden');
-            document.getElementById('bookModal').classList.add('flex');
+            loadBookData(id, () => {
+                const book = currentBookData;
+                if (!book) return;
+                document.getElementById('modalTitle').textContent = '編輯小說';
+                document.getElementById('bookId').value = book.id;
+                document.getElementById('bookTitleInput').value = book.title;
+                document.getElementById('bookUrlInput').value = book.url || '';
+                document.getElementById('bookCategoryInput').value = book.category;
+                document.getElementById('bookDescInput').value = book.desc || '';
+                document.getElementById('bookModal').classList.remove('hidden');
+                document.getElementById('bookModal').classList.add('flex');
+            });
         }
+
         function closeBookModal() {
             document.getElementById('bookModal').classList.add('hidden');
             document.getElementById('bookModal').classList.remove('flex');
         }
+
         function saveBook(e) {
             e.preventDefault();
             const id = document.getElementById('bookId').value;
@@ -502,28 +577,65 @@
             const desc = document.getElementById('bookDescInput').value;
 
             if (id) {
-                const book = library.find(b => b.id == id);
-                if (book) { book.title = title; book.url = url; book.category = category; book.desc = desc; }
+                // 編輯現有書籍
+                loadBookData(Number(id), () => {
+                    if (currentBookData) {
+                        currentBookData.title = title;
+                        currentBookData.url = url;
+                        currentBookData.category = category;
+                        currentBookData.desc = desc;
+                        saveCurrentBookData();
+                    }
+                    closeBookModal();
+                    render();
+                });
             } else {
-                library.push({ id: Date.now(), title, url, category, desc, chapters: [] });
-            }
-            saveData();
-            closeBookModal();
-            render();
-            exportProject();
-        }
-        function deleteBook(id) {
-            if (confirm('確定要刪除這本書嗎？')) {
-                library = library.filter(b => b.id !== id);
-                saveData();
-                delete readingHistory[id];
-                localStorage.setItem('novel_history', JSON.stringify(readingHistory));
+                // 新增書籍
+                const newId = Date.now();
+                currentBookData = {
+                    id: newId,
+                    title: title,
+                    url: url,
+                    category: category,
+                    desc: desc,
+                    chapters: []
+                };
+                bookIndex.push({
+                    id: newId,
+                    title: title,
+                    url: url,
+                    category: category,
+                    desc: desc,
+                    path: `books/book_${newId}.json`,
+                    chapterCount: 0
+                });
+                saveCurrentBookData();
+                closeBookModal();
                 render();
-                exportProject();
             }
         }
 
-        function openBookChapters(bookId) { activeBookId = bookId; currentView = 'chapters'; render(); }
+        function deleteBook(id) {
+            if (confirm('確定要刪除這本書嗎？')) {
+                bookIndex = bookIndex.filter(b => b.id !== id);
+                saveIndexData();
+                localStorage.removeItem(`book_cache_${id}`);
+                delete readingHistory[id];
+                localStorage.setItem('novel_history', JSON.stringify(readingHistory));
+                downloadJsonFile(bookIndex, 'index.json');
+                alert('已從索引中移除該書，並下載更新後的 index.json！');
+                render();
+            }
+        }
+
+        function openBookChapters(bookId) {
+            activeBookId = bookId;
+            loadBookData(bookId, () => {
+                currentView = 'chapters';
+                render();
+            });
+        }
+
         function openChapterModal() {
             document.getElementById('chapterModalTitle').textContent = '新增離線章節';
             document.getElementById('chapterForm').reset();
@@ -531,9 +643,9 @@
             document.getElementById('chapterModal').classList.remove('hidden');
             document.getElementById('chapterModal').classList.add('flex');
         }
+
         function openEditChapterModal(chapId) {
-            const book = library.find(b => b.id === activeBookId);
-            const chap = book.chapters.find(c => c.id === chapId);
+            const chap = currentBookData.chapters.find(c => c.id === chapId);
             if (!chap) return;
             document.getElementById('chapterModalTitle').textContent = '編輯章節';
             document.getElementById('chapterId').value = chap.id;
@@ -542,34 +654,34 @@
             document.getElementById('chapterModal').classList.remove('hidden');
             document.getElementById('chapterModal').classList.add('flex');
         }
+
         function closeChapterModal() {
             document.getElementById('chapterModal').classList.add('hidden');
             document.getElementById('chapterModal').classList.remove('flex');
         }
+
         function saveChapter(e) {
             e.preventDefault();
-            const book = library.find(b => b.id === activeBookId);
             const chapId = document.getElementById('chapterId').value;
             const title = document.getElementById('chapterTitleInput').value;
             const content = document.getElementById('chapterContentInput').value;
 
             if (chapId) {
-                const chap = book.chapters.find(c => c.id == chapId);
+                const chap = currentBookData.chapters.find(c => c.id == chapId);
                 if (chap) { chap.title = title; chap.content = content; }
             } else {
-                if (!book.chapters) book.chapters = [];
-                book.chapters.push({ id: Date.now(), title, content });
+                if (!currentBookData.chapters) currentBookData.chapters = [];
+                currentBookData.chapters.push({ id: Date.now(), title, content });
             }
-            saveData();
+            saveCurrentBookData();
             closeChapterModal();
-            render();
-            exportProject();
+            renderChapters(document.getElementById('viewArea'));
         }
+
         function deleteChapter(chapId) {
             if (confirm('確定要刪除這個章節嗎？')) {
-                const book = library.find(b => b.id === activeBookId);
-                book.chapters = book.chapters.filter(c => c.id !== chapId);
-                saveData();
+                currentBookData.chapters = currentBookData.chapters.filter(c => c.id !== chapId);
+                saveCurrentBookData();
                 renderChapters(document.getElementById('viewArea'));
             }
         }
@@ -577,31 +689,27 @@
         function readChapter(bookId, chapId) {
             activeBookId = bookId;
             activeChapterId = chapId;
-            currentView = 'reader';
-
-            const book = library.find(b => b.id === bookId);
-            if (book && book.chapters) {
-                const chap = book.chapters.find(c => c.id === chapId);
-                if (chap) {
-                    readingHistory[bookId] = {
-                        chapterId: chap.id,
-                        chapterTitle: chap.title,
-                        timestamp: Date.now()
-                    };
-                    localStorage.setItem('novel_history', JSON.stringify(readingHistory));
+            loadBookData(bookId, () => {
+                currentView = 'reader';
+                const book = currentBookData;
+                if (book && book.chapters) {
+                    const chap = book.chapters.find(c => c.id === chapId);
+                    if (chap) {
+                        readingHistory[bookId] = {
+                            chapterId: chap.id,
+                            chapterTitle: chap.title,
+                            timestamp: Date.now()
+                        };
+                        localStorage.setItem('novel_history', JSON.stringify(readingHistory));
+                    }
                 }
-            }
-
-            render();
-            window.scrollTo(0, 0);
+                render();
+                window.scrollTo(0, 0);
+            });
         }
 
         function resumeReading(bookId, chapId) {
-            activeBookId = bookId;
-            activeChapterId = chapId;
-            currentView = 'reader';
-            render();
-            window.scrollTo(0, 0);
+            readChapter(bookId, chapId);
         }
 
         function changeFontSize(delta) {
@@ -609,7 +717,11 @@
             const el = document.getElementById('readerContent');
             if (el) el.style.fontSize = fontSize + 'px';
         }
-        function filterCategory(cat) { currentCategory = cat; render(); }
+
+        function filterCategory(cat) {
+            currentCategory = cat;
+            render();
+        }
 
         const searchInput = document.getElementById('searchInput');
         if(searchInput) searchInput.addEventListener('input', render);
