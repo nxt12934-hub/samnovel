@@ -71,6 +71,7 @@
                         <option value="都市科幻">都市科幻</option>
                         <option value="歷史軍事">歷史軍事</option>
                         <option value="懸疑驚悚">懸疑驚悚</option>
+                        <option value="言情">言情</option>
                         <option value="其他 / 收藏">其他 / 收藏</option>
                     </select>
                 </div>
@@ -125,9 +126,10 @@
         let currentCategory = '全部';
         let fontSize = 18;
         let readerTheme = localStorage.getItem('reader_theme') || 'dark'; // 'dark' 或 'light'
+        let chapterSortOrder = 'asc'; // 'asc' 正序 (順序) | 'desc' 倒序
 
         let readingHistory = JSON.parse(localStorage.getItem('novel_history')) || {};
-        const categories = ['全部', '輕小說 / 異世界', '玄幻修真', '都市科幻', '歷史軍事', '懸疑驚悚', '其他 / 收藏'];
+        const categories = ['全部', '輕小說 / 異世界', '玄幻修真', '都市科幻', '歷史軍事', '懸疑驚悚', '言情', '其他 / 收藏'];
 
         function checkAuth() {
             return sessionStorage.getItem('novel_auth') === 'true';
@@ -346,13 +348,21 @@
                         <h2 class="text-2xl font-bold text-slate-100">${escapeHtml(book.title)}</h2>
                         <p class="text-xs text-slate-400 mt-1">${escapeHtml(book.desc || '')}</p>
                     </div>
-                    <button onclick="openChapterModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow">
-                        + 新增離線章節內文
-                    </button>
+                    <div class="flex items-center gap-3">
+                        <button onclick="toggleSortOrder()" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow flex items-center gap-1">
+                            ${chapterSortOrder === 'asc' ? '🔽 順序排列 (正序)' : '🔼 倒序排列 (反序)'}
+                        </button>
+                        <button onclick="openChapterModal()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition shadow">
+                            + 新增離線章節
+                        </button>
+                    </div>
                 </div>
 
                 <div class="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-md">
-                    <div class="px-6 py-4 border-b border-slate-700 font-bold text-sm text-slate-300">章節目錄清單</div>
+                    <div class="px-6 py-4 border-b border-slate-700 font-bold text-sm text-slate-300 flex justify-between items-center">
+                        <span>章節目錄清單</span>
+                        <span class="text-xs text-slate-400 font-normal">共 ${book.chapters ? book.chapters.length : 0} 篇</span>
+                    </div>
                     <div id="chapterList" class="divide-y divide-slate-700/60"></div>
                 </div>
             `;
@@ -363,12 +373,18 @@
                 return;
             }
 
-            book.chapters.forEach((chap, idx) => {
+            let displayChapters = [...book.chapters];
+            if (chapterSortOrder === 'desc') {
+                displayChapters.reverse();
+            }
+
+            displayChapters.forEach((chap, idx) => {
+                const itemNumber = chapterSortOrder === 'asc' ? (idx + 1) : (book.chapters.length - idx);
                 const item = document.createElement('div');
                 item.className = "px-6 py-3.5 flex justify-between items-center hover:bg-slate-700/40 transition";
                 item.innerHTML = `
                     <div class="cursor-pointer flex-grow flex items-center gap-3" onclick="readChapter(${book.id}, ${chap.id})">
-                        <span class="text-xs text-slate-500 font-mono">#${idx + 1}</span>
+                        <span class="text-xs text-slate-500 font-mono">#${itemNumber}</span>
                         <span class="text-sm font-medium text-slate-200 hover:text-indigo-400 transition">${escapeHtml(chap.title)}</span>
                     </div>
                     <div class="flex items-center gap-3">
@@ -381,7 +397,11 @@
             });
         }
 
-        // 閱讀器 (更寬、更滿版，支援深色/白底黑字切換)
+        function toggleSortOrder() {
+            chapterSortOrder = chapterSortOrder === 'asc' ? 'desc' : 'asc';
+            renderChapters(document.getElementById('viewArea'));
+        }
+
         function renderReader(container) {
             const book = library.find(b => b.id === activeBookId);
             const chapter = book.chapters.find(c => c.id === activeChapterId);
@@ -396,29 +416,38 @@
             const bgClass = isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-800 text-slate-200 border-slate-700';
             const topBarClass = isLight ? 'bg-slate-100 text-slate-800 border-slate-200' : 'bg-slate-800 text-slate-300 border-slate-700';
             const btnClass = isLight ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-slate-700 hover:bg-slate-600 text-slate-300';
+            const selectClass = isLight ? 'bg-white text-slate-800 border-slate-300' : 'bg-slate-900 text-slate-200 border-slate-700';
+
+            let chapterOptions = chapters.map(c => `
+                <option value="${c.id}" ${c.id === chapter.id ? 'selected' : ''}>${escapeHtml(c.title)}</option>
+            `).join('');
 
             container.innerHTML = `
                 <div class="w-full">
-                    <!-- 頂部導航與控制列 (寬度加大) -->
-                    <div class="flex justify-between items-center mb-6 border px-6 py-3.5 rounded-xl shadow-md ${topBarClass}">
-                        <button onclick="openBookChapters(${book.id})" class="text-sm text-indigo-500 font-medium hover:underline">← 返回目錄</button>
-                        <div class="flex items-center gap-3 sm:gap-4 flex-wrap justify-end">
-                            <button onclick="toggleReaderTheme()" class="px-3.5 py-1.5 rounded text-sm transition font-medium ${btnClass}">
-                                ${isLight ? '🌙 深色模式' : '☀️ 白底黑字'}
+                    <div class="flex justify-between items-center mb-6 border px-6 py-3.5 rounded-xl shadow-md gap-4 flex-wrap ${topBarClass}">
+                        <button onclick="openBookChapters(${book.id})" class="text-sm text-indigo-500 font-medium hover:underline whitespace-nowrap">← 返回目錄</button>
+                        
+                        <div class="flex-grow max-w-xs sm:max-w-md">
+                            <select onchange="switchChapter(this.value)" class="w-full text-xs sm:text-sm rounded-lg px-3 py-2 border focus:outline-none focus:ring-2 focus:ring-indigo-500 truncate ${selectClass}">
+                                ${chapterOptions}
+                            </select>
+                        </div>
+
+                        <div class="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+                            <button onclick="toggleReaderTheme()" class="px-3 py-1.5 rounded text-xs sm:text-sm transition font-medium ${btnClass}">
+                                ${isLight ? '🌙 深色' : '☀️ 白底'}
                             </button>
-                            <span class="text-sm opacity-75">字體：</span>
-                            <button onclick="changeFontSize(-2)" class="px-3 py-1.5 rounded text-sm transition ${btnClass}">A-</button>
-                            <button onclick="changeFontSize(2)" class="px-3 py-1.5 rounded text-sm transition ${btnClass}">A+</button>
+                            <span class="text-xs sm:text-sm opacity-75">字體：</span>
+                            <button onclick="changeFontSize(-2)" class="px-2.5 py-1.5 rounded text-xs sm:text-sm transition ${btnClass}">A-</button>
+                            <button onclick="changeFontSize(2)" class="px-2.5 py-1.5 rounded text-xs sm:text-sm transition ${btnClass}">A+</button>
                         </div>
                     </div>
 
-                    <!-- 閱讀本文區域 (寬度放大到 max-w-none 展開) -->
                     <article class="border rounded-2xl p-8 sm:p-14 shadow-2xl mb-6 ${bgClass}">
                         <h2 class="text-2xl sm:text-3xl font-bold mb-8 pb-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-700'}">${escapeHtml(chapter.title)}</h2>
                         <div id="readerContent" class="leading-loose whitespace-pre-wrap font-sans" style="font-size: ${fontSize}px;">${escapeHtml(chapter.content)}</div>
                     </article>
 
-                    <!-- 上一章 / 下一章按鈕 -->
                     <div class="flex justify-between items-center pb-6">
                         <button ${prevChap ? `onclick="readChapter(${book.id}, ${prevChap.id})"` : 'disabled'} class="border px-6 py-3 rounded-xl text-sm font-medium transition ${prevChap ? btnClass : 'opacity-40 cursor-not-allowed border-transparent bg-slate-800/50 text-slate-500'}">
                             ← 上一章
@@ -429,6 +458,10 @@
                     </div>
                 </div>
             `;
+        }
+
+        function switchChapter(chapId) {
+            readChapter(activeBookId, Number(chapId));
         }
 
         function toggleReaderTheme() {
@@ -537,8 +570,7 @@
                 const book = library.find(b => b.id === activeBookId);
                 book.chapters = book.chapters.filter(c => c.id !== chapId);
                 saveData();
-                render();
-                exportProject();
+                renderChapters(document.getElementById('viewArea'));
             }
         }
 
