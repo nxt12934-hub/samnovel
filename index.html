@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>無廣告個人小說書庫 (雲端同步版)</title>
+    <title>無廣告個人小說書庫</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -13,9 +13,9 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col justify-between">
 
-    <!-- 頂部導覽列 (登入後才會顯示) -->
+    <!-- 頂部導覽列 (進入閱讀介面時會自動隱藏) -->
     <header id="appHeader" class="bg-slate-800 border-b border-slate-700 shadow-md sticky top-0 z-40 hidden">
-        <div class="max-w-6xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
             <div class="flex items-center gap-3 cursor-pointer" onclick="goHome()">
                 <span class="text-2xl">📚</span>
                 <div>
@@ -27,11 +27,11 @@
             <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
                 <input type="text" id="searchInput" placeholder="搜尋書名或標籤..." class="bg-slate-700 text-slate-100 px-4 py-2 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-48">
                 
-                <button onclick="loadFromGitHub()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow" title="從 GitHub 重新同步 JSON">
-                    🔄 同步雲端
+                <button onclick="loadFromGitHub()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow" title="從 GitHub 同步雲端">
+                    🔄 同步
                 </button>
-                <button onclick="exportProject()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow" title="下載 library.json 檔案">
-                    📥 下載 JSON
+                <button onclick="exportProject()" class="bg-slate-700 hover:bg-slate-600 text-slate-300 px-3 py-2 rounded-lg text-sm transition shadow" title="下載 JSON 備份">
+                    📥 下載
                 </button>
                 <button onclick="logout()" class="bg-rose-900/50 hover:bg-rose-900 text-rose-200 px-3 py-2 rounded-lg text-sm transition shadow" title="登出鎖定">
                     🔒 登出
@@ -45,11 +45,11 @@
     </header>
 
     <!-- 主要內容區 -->
-    <main id="mainContainer" class="max-w-6xl mx-auto px-4 py-8 flex-grow w-full flex flex-col justify-center">
+    <main class="max-w-7xl mx-auto px-4 py-8 flex-grow w-full flex flex-col justify-center">
         <div id="viewArea"></div>
     </main>
 
-    <!-- 新編/編輯小說互動視窗 -->
+    <!-- 新增/編輯小說互動視窗 -->
     <div id="bookModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center p-4 z-50">
         <div class="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
             <h2 id="modalTitle" class="text-lg font-bold mb-4 text-slate-100">新增小說</h2>
@@ -97,7 +97,7 @@
                     <input type="text" id="chapterTitleInput" required class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
                 </div>
                 <div class="flex-grow flex flex-col">
-                    <label class="block text-xs font-medium text-slate-400 mb-1">章節內文（無廣告乾淨閱讀）</label>
+                    <label class="block text-xs font-medium text-slate-400 mb-1">章節內文</label>
                     <textarea id="chapterContentInput" rows="12" required placeholder="在此貼上小說章節內文..." class="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 flex-grow font-sans leading-relaxed"></textarea>
                 </div>
                 <div class="flex justify-end gap-3 pt-2">
@@ -115,10 +115,7 @@
 
     <!-- JavaScript 核心邏輯 -->
     <script>
-        // ==================== 🔐 登入設定 ====================
-        const MY_PASSWORD = "1234"; // 預設密碼
-        // ====================================================
-
+        const MY_PASSWORD = "1234"; // 預設解鎖密碼
         const JSON_URL = './library.json';
 
         let library = [];
@@ -127,10 +124,9 @@
         let activeChapterId = null;
         let currentCategory = '全部';
         let fontSize = 18;
+        let readerTheme = localStorage.getItem('reader_theme') || 'dark'; // 'dark' 或 'light'
 
-        // 讀取閱讀紀錄 (存在 localStorage 獨立記錄，不影響雲端書庫結構)
         let readingHistory = JSON.parse(localStorage.getItem('novel_history')) || {};
-
         const categories = ['全部', '輕小說 / 異世界', '玄幻修真', '都市科幻', '歷史軍事', '懸疑驚悚', '其他 / 收藏'];
 
         function checkAuth() {
@@ -144,8 +140,7 @@
 
             if (inputPwd === MY_PASSWORD) {
                 sessionStorage.setItem('novel_auth', 'true');
-                document.getElementById('appHeader').classList.remove('hidden');
-                loadFromGitHub();
+                bootApp();
             } else {
                 errorMsg.classList.remove('hidden');
                 document.getElementById('passwordInput').value = '';
@@ -154,19 +149,18 @@
 
         function logout() {
             sessionStorage.removeItem('novel_auth');
-            document.getElementById('appHeader').classList.add('hidden');
-            renderLoginScreen();
+            bootApp();
         }
 
         function renderLoginScreen() {
-            currentView = 'login';
+            document.getElementById('appHeader').classList.add('hidden');
             const container = document.getElementById('viewArea');
             container.innerHTML = `
-                <div class="max-w-md mx-auto bg-slate-800 border border-slate-700 rounded-2xl p-8 shadow-2xl my-12">
+                <div class="max-w-md mx-auto bg-slate-800 border border-slate-700 rounded-2xl p-8 shadow-2xl my-12 w-full">
                     <div class="text-center mb-6">
                         <span class="text-4xl">📚</span>
                         <h2 class="text-xl font-bold text-slate-100 mt-2">個人小說書庫解鎖</h2>
-                        <p class="text-xs text-slate-400 mt-1">請輸入存取密碼以進入書庫</p>
+                        <p class="text-xs text-slate-400 mt-1">請輸入密碼以進入書庫 (預設: 1234)</p>
                     </div>
                     <form onsubmit="handleLogin(event)" class="space-y-4">
                         <div>
@@ -181,36 +175,49 @@
             `;
         }
 
+        function bootApp() {
+            if (!checkAuth()) {
+                renderLoginScreen();
+                return;
+            }
+            
+            const localData = localStorage.getItem('my_novels_github');
+            if (localData) {
+                try { library = JSON.parse(localData); } catch(e) {}
+            }
+            
+            if (!library || library.length === 0) {
+                library = [
+                    {
+                        id: 1,
+                        title: '範例小說',
+                        url: '',
+                        category: '輕小說 / 異世界',
+                        desc: '示範書籍',
+                        chapters: [{ id: 101, title: '第一章', content: '內容範例' }]
+                    }
+                ];
+            }
+            
+            render();
+            loadFromGitHub();
+        }
+
         async function loadFromGitHub() {
             const statusEl = document.getElementById('syncStatus');
-            if(statusEl) statusEl.textContent = '狀態：正在從 GitHub 同步...';
             try {
                 const response = await fetch(JSON_URL + '?t=' + Date.now());
-                if (!response.ok) throw new Error('找不到 library.json');
-                library = await response.json();
-                if(statusEl) statusEl.textContent = '狀態：已成功同步 GitHub 雲端書庫';
-                render();
-            } catch (err) {
-                const localData = localStorage.getItem('my_novels_github');
-                if (localData) {
-                    library = JSON.parse(localData);
-                    if(statusEl) statusEl.textContent = '狀態：已載入本機快取資料';
-                } else {
-                    library = [
-                        {
-                            id: 1,
-                            title: '關於我轉生變成史萊姆這檔事 (範例)',
-                            url: 'https://ncode.syosetu.com/',
-                            category: '輕小說 / 異世界',
-                            desc: '日系轉生輕小說代表作',
-                            chapters: [
-                                { id: 101, title: '第一話：死亡與轉生', content: '這裡是可以自由貼上的無廣告章節內文。' }
-                            ]
-                        }
-                    ];
-                    if(statusEl) statusEl.textContent = '狀態：使用預設示範資料';
+                if (response.ok) {
+                    const remoteData = await response.json();
+                    if (Array.isArray(remoteData) && remoteData.length > 0) {
+                        library = remoteData;
+                        localStorage.setItem('my_novels_github', JSON.stringify(library));
+                        if(statusEl) statusEl.textContent = '狀態：已同步雲端';
+                        render();
+                    }
                 }
-                render();
+            } catch (err) {
+                if(statusEl) statusEl.textContent = '狀態：使用本機快取';
             }
         }
 
@@ -230,7 +237,6 @@
         }
 
         function goHome() {
-            if (!checkAuth()) return;
             currentView = 'home';
             activeBookId = null;
             activeChapterId = null;
@@ -239,12 +245,17 @@
 
         function render() {
             if (!checkAuth()) {
-                document.getElementById('appHeader').classList.add('hidden');
                 renderLoginScreen();
                 return;
             }
 
-            document.getElementById('appHeader').classList.remove('hidden');
+            const header = document.getElementById('appHeader');
+            if (currentView === 'reader') {
+                header.classList.add('hidden'); // 進入閱讀介面時隱藏上方導覽列
+            } else {
+                header.classList.remove('hidden'); // 其他頁面正常顯示
+            }
+
             const container = document.getElementById('viewArea');
             container.innerHTML = '';
 
@@ -283,7 +294,7 @@
 
             filtered.forEach(book => {
                 const chapterCount = book.chapters ? book.chapters.length : 0;
-                const history = readingHistory[book.id]; // 讀取該書的上次閱讀紀錄
+                const history = readingHistory[book.id];
 
                 const card = document.createElement('div');
                 card.className = "bg-slate-800 border border-slate-700 rounded-xl p-5 flex flex-col justify-between hover:border-indigo-500 transition group shadow-md";
@@ -299,7 +310,6 @@
                         <h3 class="font-bold text-base text-slate-100 group-hover:text-indigo-400 transition mb-1 cursor-pointer" onclick="openBookChapters(${book.id})">${escapeHtml(book.title)}</h3>
                         <p class="text-xs text-slate-400 line-clamp-2 mb-3">${escapeHtml(book.desc || '無備註說明')}</p>
                         
-                        <!-- 上次觀看記錄顯示區 -->
                         <div class="text-xs text-slate-300 mb-4 bg-slate-900/60 px-3 py-2 rounded border border-slate-700/60 flex flex-col gap-1">
                             <div class="flex justify-between items-center text-slate-400">
                                 <span>離線章節：<strong class="text-indigo-400">${chapterCount}</strong> 篇</span>
@@ -371,6 +381,7 @@
             });
         }
 
+        // 閱讀器 (更寬、更滿版，支援深色/白底黑字切換)
         function renderReader(container) {
             const book = library.find(b => b.id === activeBookId);
             const chapter = book.chapters.find(c => c.id === activeChapterId);
@@ -381,32 +392,49 @@
             const prevChap = currentIndex > 0 ? chapters[currentIndex - 1] : null;
             const nextChap = currentIndex < chapters.length - 1 ? chapters[currentIndex + 1] : null;
 
+            const isLight = readerTheme === 'light';
+            const bgClass = isLight ? 'bg-white text-slate-900 border-slate-200' : 'bg-slate-800 text-slate-200 border-slate-700';
+            const topBarClass = isLight ? 'bg-slate-100 text-slate-800 border-slate-200' : 'bg-slate-800 text-slate-300 border-slate-700';
+            const btnClass = isLight ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-slate-700 hover:bg-slate-600 text-slate-300';
+
             container.innerHTML = `
-                <div class="max-w-3xl mx-auto">
-                    <div class="flex justify-between items-center mb-6 bg-slate-800 border border-slate-700 px-4 py-3 rounded-xl shadow-md">
-                        <button onclick="openBookChapters(${book.id})" class="text-xs text-indigo-400 hover:underline">← 返回目錄</button>
-                        <div class="flex items-center gap-3">
-                            <span class="text-xs text-slate-400">字體大小：</span>
-                            <button onclick="changeFontSize(-2)" class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs">A-</button>
-                            <button onclick="changeFontSize(2)" class="bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-xs">A+</button>
+                <div class="w-full">
+                    <!-- 頂部導航與控制列 (寬度加大) -->
+                    <div class="flex justify-between items-center mb-6 border px-6 py-3.5 rounded-xl shadow-md ${topBarClass}">
+                        <button onclick="openBookChapters(${book.id})" class="text-sm text-indigo-500 font-medium hover:underline">← 返回目錄</button>
+                        <div class="flex items-center gap-3 sm:gap-4 flex-wrap justify-end">
+                            <button onclick="toggleReaderTheme()" class="px-3.5 py-1.5 rounded text-sm transition font-medium ${btnClass}">
+                                ${isLight ? '🌙 深色模式' : '☀️ 白底黑字'}
+                            </button>
+                            <span class="text-sm opacity-75">字體：</span>
+                            <button onclick="changeFontSize(-2)" class="px-3 py-1.5 rounded text-sm transition ${btnClass}">A-</button>
+                            <button onclick="changeFontSize(2)" class="px-3 py-1.5 rounded text-sm transition ${btnClass}">A+</button>
                         </div>
                     </div>
 
-                    <article class="bg-slate-800 border border-slate-700 rounded-xl p-6 sm:p-10 shadow-xl mb-6">
-                        <h2 class="text-xl sm:text-2xl font-bold text-slate-100 mb-6 pb-4 border-b border-slate-700">${escapeHtml(chapter.title)}</h2>
-                        <div id="readerContent" class="text-slate-200 leading-relaxed whitespace-pre-wrap font-sans" style="font-size: ${fontSize}px;">${escapeHtml(chapter.content)}</div>
+                    <!-- 閱讀本文區域 (寬度放大到 max-w-none 展開) -->
+                    <article class="border rounded-2xl p-8 sm:p-14 shadow-2xl mb-6 ${bgClass}">
+                        <h2 class="text-2xl sm:text-3xl font-bold mb-8 pb-4 border-b ${isLight ? 'border-slate-200' : 'border-slate-700'}">${escapeHtml(chapter.title)}</h2>
+                        <div id="readerContent" class="leading-loose whitespace-pre-wrap font-sans" style="font-size: ${fontSize}px;">${escapeHtml(chapter.content)}</div>
                     </article>
 
-                    <div class="flex justify-between items-center">
-                        <button ${prevChap ? `onclick="readChapter(${book.id}, ${prevChap.id})"` : 'disabled'} class="bg-slate-800 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg text-sm transition ${prevChap ? 'hover:bg-slate-700' : 'opacity-40 cursor-not-allowed'}">
+                    <!-- 上一章 / 下一章按鈕 -->
+                    <div class="flex justify-between items-center pb-6">
+                        <button ${prevChap ? `onclick="readChapter(${book.id}, ${prevChap.id})"` : 'disabled'} class="border px-6 py-3 rounded-xl text-sm font-medium transition ${prevChap ? btnClass : 'opacity-40 cursor-not-allowed border-transparent bg-slate-800/50 text-slate-500'}">
                             ← 上一章
                         </button>
-                        <button ${nextChap ? `onclick="readChapter(${book.id}, ${nextChap.id})"` : 'disabled'} class="bg-slate-800 border border-slate-700 text-slate-300 px-4 py-2 rounded-lg text-sm transition ${nextChap ? 'hover:bg-slate-700' : 'opacity-40 cursor-not-allowed'}">
+                        <button ${nextChap ? `onclick="readChapter(${book.id}, ${nextChap.id})"` : 'disabled'} class="border px-6 py-3 rounded-xl text-sm font-medium transition ${nextChap ? btnClass : 'opacity-40 cursor-not-allowed border-transparent bg-slate-800/50 text-slate-500'}">
                             下一章 →
                         </button>
                     </div>
                 </div>
             `;
+        }
+
+        function toggleReaderTheme() {
+            readerTheme = readerTheme === 'dark' ? 'light' : 'dark';
+            localStorage.setItem('reader_theme', readerTheme);
+            render();
         }
 
         function openBookModal() {
@@ -455,7 +483,7 @@
             if (confirm('確定要刪除這本書嗎？')) {
                 library = library.filter(b => b.id !== id);
                 saveData();
-                delete readingHistory[id]; // 同時清除該書的閱讀紀錄
+                delete readingHistory[id];
                 localStorage.setItem('novel_history', JSON.stringify(readingHistory));
                 render();
                 exportProject();
@@ -514,7 +542,6 @@
             }
         }
 
-        // 閱讀特定章節並記錄進度
         function readChapter(bookId, chapId) {
             activeBookId = bookId;
             activeChapterId = chapId;
@@ -524,7 +551,6 @@
             if (book && book.chapters) {
                 const chap = book.chapters.find(c => c.id === chapId);
                 if (chap) {
-                    // 儲存閱讀紀錄至 localStorage
                     readingHistory[bookId] = {
                         chapterId: chap.id,
                         chapterTitle: chap.title,
@@ -538,7 +564,6 @@
             window.scrollTo(0, 0);
         }
 
-        // 從首頁快速繼續上次閱讀
         function resumeReading(bookId, chapId) {
             activeBookId = bookId;
             activeChapterId = chapId;
@@ -562,8 +587,8 @@
             return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
         }
 
-        // 初始化：檢查是否已登入
-        render();
+        // 啟動初始化檢查
+        bootApp();
     </script>
 </body>
 </html>
